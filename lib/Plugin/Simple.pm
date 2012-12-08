@@ -23,28 +23,33 @@ use Class::Load qw(load_class);
   use Plugin::Simple;
 
   #during configuration 
-  $plugins=Plugin::Simple->new(phases=>['Phase1', 'Phase2']); 
+  $ps=Plugin::Simple->new(phases=>['foo', 'bar']); 
 
   #registers p under its phase & load/use it; $options from Load::Class 
-  $plugins->register ($plugin,\%options);   
+  $ps->register ($plugin,\%options);   
 
   #later during a phase: execute all plugins in this phase
-  @p=$plugins->execute ($phase, $core); 
+  @p=$ps->execute ($phase, $core); 
   foreach my $plugin (@p){
     my ($obj, $ret)=$plugins->return_value($plugin);
   }
 
 =attr   
-  $aref=$plugins->phases;  #getter
+  $aref=$ps->phases;  #getter
 
 Getter returns arrayRef with all phase labels. 
 
 Note that order of phases has no impact on when they're called. It's up the app 
 which makes use of Plugin::Simple to call phases.
 
-=method my @a=$self->filter_phases (sub {/^b/});
+=method my @a=$ps->filter_phases (sub {/^b/});
 
 return only those phases which match the criterion.
+
+=method my @a=$ps->add_phase ('phase1');
+
+Teach the plugin system a new phase. You can add multiple phases at once:
+  my @a=$self->add_phase ('phase1', 'phase2');
 
 =cut
 
@@ -53,15 +58,21 @@ has 'phases' => (
     is      => 'ro',
     isa     => 'ArrayRef[Str]',
     default => sub { [] },
-    handles => {'filter_phases' => 'grep'},
+    handles => {
+        filter_phases => 'grep',
+        add_phase     => 'push'
+    },
 );
 
+#
+# METHODS
+#
 
-=attr plugins
+=method my $href=$ps->plugins;
 
-the accessor 'plugins' returns a hashRef with all registered
-plugins in their respective phases:
-  my $registry=$plugins->plugins;
+'plugins' returns a hashRef with all registered plugins in their respective 
+phases:
+  my $registry=$ps->plugins;
   
   #returns first plugin from that phase
   $registry->{$phase}[0]; 
@@ -77,7 +88,7 @@ has 'plugins' => (
     init_arg => undef,
 );
 
-=method my @registered_plugins=$self->plugin_list
+=method my @registered_plugins=$ps->plugin_list
 
 List all registered plugins. Returns a list.
 
@@ -95,7 +106,7 @@ sub list_plugins {
     return @p;
 }
 
-=method my @plugins=filter_plugins(sub {/Test/}); 
+=method my @plugins=$ps->filter_plugins(sub {/Test/}); 
 
 return registered plutings whose names fits the filter criterion
 =cut
@@ -107,7 +118,7 @@ sub filter_plugins {
 }
 
 
-=method my ($obj,$ret)=return_value($plugin)
+=method my ($obj,$ret)=$ps->return_value($plugin)
 
 Expects the plugin (label), returns the plugin object and return value from 
 execute as list.
@@ -131,14 +142,14 @@ sub return_value {
     return $aref->[0], $aref->[1];
 }
 
-=method $plugins->register ($plugin, $options)
+=method $ps->register ($plugin, $options)
 
 Dies (confesses) on failure. 
 
 Should we implement an option for lazy load? Then load would be delayed until 
 when we need execute. Not now, but maybe later. 
 
-Should return name of plugin on success.
+Returns name of plugin on success.
 
 =cut
 
@@ -153,16 +164,18 @@ sub register {
           "Your plugin '$plugin' doesn't plug in right (Plugin::Simple::Role::Plugin).";
     }
 
+    #phase could be malformed
     my $phase = $plugin->phase();
+    confess 'Problem with phase' if (!$phase);
     $self->_phase_exists($phase);
 
     #print "plugin $plugin comes with phase $phase\n";
 
     push @{$self->{plugins}{$phase}}, $plugin;
-    return $plugin;    #success
+    return $plugin;                  #success
 }
 
-=method my @p=$self->execute($phase,$core);
+=method my @p=$ps->execute($phase,$core);
 
 returns list of plugins which were run. Accepts whatever you pass it. It 
 doesn't have to be your core.
@@ -182,11 +195,16 @@ sub execute {
 
     foreach my $plugin (@{$aref}) {
         my $obj = $plugin->new(@_);
-        $self->{return_values}{$plugin} = [$obj, $obj->execute()];
+        $self->{return_values}{$plugin} = [$obj, $obj->execute(@_)];
     }
-    return $aref;
+    return @{$aref};
 }
 
+#
+# PRIVATE
+#
+
+#make public? no need
 sub _phase_exists {
     my ($self, $phase) = @_;
     if (!$self->filter_phases(sub {/^$phase$/})) {

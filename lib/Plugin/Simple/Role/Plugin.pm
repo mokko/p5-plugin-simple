@@ -1,3 +1,4 @@
+#ABSTRACT: Minimal plugin requirements
 package Plugin::Simple::Role::Plugin;
 use strict;
 use warnings;

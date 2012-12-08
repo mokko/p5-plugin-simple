@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 18;
+use Test::More tests => 21;
 use Try::Tiny;
 use FindBin;
 use File::Spec;
@@ -46,6 +46,11 @@ note "execute";
 #12: positives
 ok($plugins->execute('Phase1'), 'execute Phase1');
 ok($plugins->execute('Phase2', {foo => 'bar'}), 'execute Phase2');
+ok($plugins->execute('Phase2', (foo => 'bar')), 'execute Phase2');
+ok($plugins->execute('Phase2', (foo => 'bar', this => 'that')),
+    'execute Phase2');
+ok($plugins->execute('Phase2', {foo => 'bar', this => 'that'}),
+    'execute Phase2');
 
 
 #13: negatives
@@ -71,12 +76,12 @@ note "return_value";
 
 note "list_plugins and filter_plugin";
 {
-my @p= $plugins->list_plugins;
-is ($p[0], 'TestPlugin1', 'list_plugin');
+    my @p = $plugins->list_plugins;
+    is($p[0], 'TestPlugin1', 'list_plugin');
 }
 
 {
-my @p = $plugins->filter_plugins(sub {/TestPlugin1/});
-is($p[0], 'TestPlugin1', 'filter_plugin');
+    my @p = $plugins->filter_plugins(sub {/TestPlugin1/});
+    is($p[0], 'TestPlugin1', 'filter_plugin');
 }
 
