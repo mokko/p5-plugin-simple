@@ -11,7 +11,7 @@ has 'foo' => (is => 'ro', isa => 'Str', required => 1);
 sub phase {'Phase2'}
 
 sub execute {
-    my ($self) = @_;
+    my $self = shift;
     die "Need myself"             if (!$self);
     return undef;
 }

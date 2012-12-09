@@ -26,7 +26,7 @@ use Class::Load qw(load_class);
   $ps=Plugin::Simple->new(phases=>['foo', 'bar']); 
 
   #registers p under its phase & load/use it; $options from Load::Class 
-  $ps->register ($plugin,\%options);   
+  $ps->register ('YourPlugin',\%options);   
 
   #later during a phase: execute all plugins in this phase
   @p=$ps->execute ($phase, $core); 
@@ -172,32 +172,59 @@ sub register {
     #print "plugin $plugin comes with phase $phase\n";
 
     push @{$self->{plugins}{$phase}}, $plugin;
-    return $plugin;                  #success
+    return $plugin;    #success
 }
 
-=method my @p=$ps->execute($phase,$core);
+=method my @p=$ps->execute (phase=>$phase);
 
-returns list of plugins which were run. Accepts whatever you pass it. It 
-doesn't have to be your core.
+Makes new plugins for all plugins registered in this phase and runs execute on 
+them. Needs phase. Optionally accepts arguments for new and execute. Returns 
+list of plugins that were run. 
+
+  exe_arg=>$href -> execute(%{$href}) 
+  exe_arg=>$aref -> execute(@{$aref})
+
+All remaining hash elements are passed to new verbatim.  
 
 =cut
 
 sub execute {
-    my $self  = shift;
-    my $phase = shift;
+    my $self    = shift;
+    my %arg     = @_ or confess "Need some args";
+    my $phase   = delete $arg{phase} or confess "Need phase";
+    my $exe_arg = delete $arg{exe_arg} if $arg{exe_arg};
 
     $self->_phase_exists($phase);
-    my $aref = $self->{plugins}{$phase};
+    my $registered_plugins = $self->{plugins}{$phase};
 
-    if (@{$aref} == 0) {
+    if (@{$registered_plugins} == 0) {
         confess "No plugins registered for phase '$phase'";
     }
 
-    foreach my $plugin (@{$aref}) {
-        my $obj = $plugin->new(@_);
-        $self->{return_values}{$plugin} = [$obj, $obj->execute(@_)];
+    #do I really need an execute in every plugin? It would be much 
+    #easier without it... execute gives me a proper return value
+    #new also returns something, of course. The alternative would be to
+    #hand over the result inside the object. I guess that would be
+    #a requirement I could make: a la $self->return
+    foreach my $plugin (@{$registered_plugins}) {
+        my $obj = $plugin->new(%arg);
+        my $ret;
+        if (!$exe_arg) {
+            $ret = $obj->execute();
+        }
+        elsif (ref $exe_arg eq 'HASH') {
+            $ret = $obj->execute(%{$exe_arg});
+        }
+        elsif (ref $exe_arg eq 'ARRAY') {
+            $ret = $obj->execute(@{$exe_arg});
+        }
+        else {
+            confess "Error with exe_arg";
+        }
+        $self->{return_values}{$plugin} = [$obj, $ret];
+
     }
-    return @{$aref};
+    return @{$registered_plugins};
 }
 
 #

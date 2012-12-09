@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 21;
+use Test::More tests => 20;
 use Try::Tiny;
 use FindBin;
 use File::Spec;
@@ -27,13 +27,13 @@ my $ph = $plugins->phases;
 ok($ph->[0] eq 'Phase1' && $ph->[1] eq 'Phase2', 'phases getter');
 
 
-#7: positives
+#5: positives
 note "register";
 ok($plugins->register('TestPlugin1'), 'register TestPlugin1');
 ok($plugins->register('TestPlugin2'), 'register TestPlugin2');
 is($plugins->register('TestPlugin1'), 'TestPlugin1', 'register return value');
 
-#10: negatives
+#8: negatives
 try { $plugins->register('TestPlugin3'); }
 catch { ok($_, 'non existant phase') };
 
@@ -42,23 +42,37 @@ catch { ok($_, 'non existing plugin') };
 
 
 note "execute";
-
 #12: positives
-ok($plugins->execute('Phase1'), 'execute Phase1');
-ok($plugins->execute('Phase2', {foo => 'bar'}), 'execute Phase2');
-ok($plugins->execute('Phase2', (foo => 'bar')), 'execute Phase2');
-ok($plugins->execute('Phase2', (foo => 'bar', this => 'that')),
-    'execute Phase2');
-ok($plugins->execute('Phase2', {foo => 'bar', this => 'that'}),
-    'execute Phase2');
+ok($plugins->execute(phase => 'Phase1'), 'execute Phase1');
+ok( $plugins->execute(
+        phase   => 'Phase2',
+        foo => 'bar'
+    ),
+    'execute Phase2'
+);
+ok( $plugins->execute(
+        phase   => 'Phase2',
+        foo => 'bar', 
+        exe_arg => ['a','b'] # \@_
+    ),
+    'execute Phase2'
+);
 
+ok( $plugins->execute(
+        phase   => 'Phase2',
+        foo => 'bar', 
+        exe_arg => {a=>'b', b=>'c'} 
+    ),
+    'execute Phase2'
+);
 
-#13: negatives
+#14: negatives
 #todo excute and fail without foo bar
 #ok($plugins->execute('Phase1', {foo=>'bar'}), 'execute Phase1');
-try { $plugins->execute('non_existant_phase'); }
+try { $plugins->execute(phase=>'non_existant_phase'); }
 catch { ok($_, 'non existant phase') };
 
+#15
 note "return_value";
 {
     my ($obj, $ret) = $plugins->return_value('TestPlugin1');
@@ -74,6 +88,7 @@ note "return_value";
     catch { ok($_, 'return_value on non-existing-plugin') };
 }
 
+#19
 note "list_plugins and filter_plugin";
 {
     my @p = $plugins->list_plugins;

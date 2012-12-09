@@ -24,14 +24,6 @@ from your app.
 
 requires 'execute';
 
-=method $self->plugin_package
 
-returns the plugin's package name. 
-
-=cut
-
-sub plugin_package {
-    return __PACKAGE__;
-}
 
 1;
