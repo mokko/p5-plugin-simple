@@ -2,101 +2,100 @@
 
 use strict;
 use warnings;
-use Test::More tests => 20;
+use Test::More tests => 24;
 use Try::Tiny;
 use FindBin;
 use File::Spec;
 use Scalar::Util 'blessed';
-
-#use lib File::Spec->catfile('t', 'lib');
-use lib 't/lib';    #todo
+use Data::Dumper;
+use lib File::Spec->catfile('t', 'lib');
 
 #1
 use_ok('Plugin::Simple', 'can load Plugin::Simple');
 
 #2
-note "new and plugins";
-my $plugins = Plugin::Simple->new();
-ok($plugins, 'new returns something');
+note "new and phases";
+my $plugin_system = Plugin::Simple->new();
+ok($plugin_system, 'new without phases');
 
-#3 should I test if phase is unique? no...
+$plugin_system = Plugin::Simple->new(phases => ['Phase1', 'Phase2', 'Phase2']);
+ok($plugin_system, 'new with phases');
+my $phases_aref=$plugin_system->phases;
+is ($phases_aref->[0], 'Phase1', 'phases getter');
+ok (scalar (grep $_ eq 'Phase2', @{$phases_aref}) == 1, 'duplicates from new removed');
+ok($plugin_system->filter_phases ('Phase1'), 'filter phases');
 
-$plugins = Plugin::Simple->new(phases => ['Phase1', 'Phase2']);
-ok($plugins, 'constructor with phases');
-my $ph = $plugins->phases;
-ok($ph->[0] eq 'Phase1' && $ph->[1] eq 'Phase2', 'phases getter');
+ok ($plugin_system->add_phase ('Phase3'), 'adding phase');
+ok ($plugin_system->add_phase ('Phase3'), 'adding phase repeatedly');
+ok($plugin_system->filter_phases ('Phase3'), 'add phase success');
 
 
-#5: positives
+
+#10: positives
 note "register";
-ok($plugins->register('TestPlugin1'), 'register TestPlugin1');
-ok($plugins->register('TestPlugin2'), 'register TestPlugin2');
-is($plugins->register('TestPlugin1'), 'TestPlugin1', 'register return value');
+ok($plugin_system->register('TestPlugin1'), 'register TestPlugin1');
+ok($plugin_system->register('TestPlugin2'), 'register TestPlugin2');
+is($plugin_system->register('TestPlugin1'),
+    'TestPlugin1', 'register return value');
 
-#8: negatives
-try { $plugins->register('TestPlugin3'); }
+#13: negatives
+try { $plugin_system->register('TestPlugin3'); }
 catch { ok($_, 'non existant phase') };
 
-try { $plugins->register('NonExistantPlugin'); }
+try { $plugin_system->register('NonExistantPlugin'); }
 catch { ok($_, 'non existing plugin') };
 
 
+#15: positives
 note "execute";
-#12: positives
-ok($plugins->execute(phase => 'Phase1'), 'execute Phase1');
-ok( $plugins->execute(
-        phase   => 'Phase2',
-        foo => 'bar'
+ok($plugin_system->execute(phase => 'Phase1'), 'execute Phase1');
+ok( $plugin_system->execute(
+        phase => 'Phase2',
+        foo   => 'bar'
     ),
     'execute Phase2'
 );
-ok( $plugins->execute(
-        phase   => 'Phase2',
-        foo => 'bar', 
-        exe_arg => ['a','b'] # \@_
-    ),
-    'execute Phase2'
-);
-
-ok( $plugins->execute(
-        phase   => 'Phase2',
-        foo => 'bar', 
-        exe_arg => {a=>'b', b=>'c'} 
+ok( $plugin_system->execute(
+        phase => 'Phase2',
+        foo   => 'bar',
     ),
     'execute Phase2'
 );
 
-#14: negatives
-#todo excute and fail without foo bar
-#ok($plugins->execute('Phase1', {foo=>'bar'}), 'execute Phase1');
-try { $plugins->execute(phase=>'non_existant_phase'); }
-catch { ok($_, 'non existant phase') };
+#18: negatives
+try { $plugin_system->execute(phase => 'Phase2'); }
+catch { ok($_, 'Phase2 without foo') } 
+finally { die "need to die" if (!@_) };
 
-#15
+
+try { $plugin_system->execute(phase => 'non_existant_phase'); }
+catch { ok($_, 'non existant phase') }
+finally { die "need to die" if (!@_) };
+
+#20
 note "return_value";
 {
-    my ($obj, $ret) = $plugins->return_value('TestPlugin1');
-    is(ref $obj, 'TestPlugin1', 'TestPlugin object ');
-    is($ret,     'bar',         'TestPlugin return value');
+    my $ret = $plugin_system->return_value('TestPlugin1');
+    is($ret, 'bar', 'TestPlugin return value correct');
 }
 {
-    my ($obj, $ret) = $plugins->return_value('TestPlugin2');
+    my $ret = $plugin_system->return_value('TestPlugin2');
     ok(!$ret, 'testing return value undef');
 }
 {
-    try { $plugins->return_value('TestPlugin3'); }
-    catch { ok($_, 'return_value on non-existing-plugin') };
+    try { $plugin_system->return_value('TestPlugin3'); }
+    catch { ok($_, 'return_value on non-existing-plugin') }
+    finally { die "need to die" if (!@_) };
 }
 
-#19
+#23
 note "list_plugins and filter_plugin";
 {
-    my @p = $plugins->list_plugins;
+    my @p = $plugin_system->list_plugins;
     is($p[0], 'TestPlugin1', 'list_plugin');
 }
 
 {
-    my @p = $plugins->filter_plugins(sub {/TestPlugin1/});
+    my @p = $plugin_system->filter_plugins('TestPlugin1');
     is($p[0], 'TestPlugin1', 'filter_plugin');
 }
-
