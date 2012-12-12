@@ -1,146 +1,105 @@
 #ABSTRACT: Simply make your app pluggable
 package Plugin::Simple;
+{
+  $Plugin::Simple::VERSION = '0.001';
+}
 use strict;
 use warnings;
 use Moose;
 use Carp 'confess';
 use Class::Load qw(load_class);
+#use Data::Dumper;
 
-=head1 SYNOPSIS
 
-  package YourPlugin;
-  use Moose;                           
-  with 'Plugin::Simple::Role::Plugin'; 
+#
+# ATTR
+#
 
-  sub phase {'foo'}
-  
-  sub execute {
-      my ($self, $core)=@_; #receive what you hand over in execute below
-      #do something
-  }
-
-  package YourApp;
-  use Plugin::Simple;
-
-  #during configuration 
-  $plugins=Plugin::Simple->new(phases=>['Phase1', 'Phase2']); 
-
-  #registers p under its phase & load/use it; $options from Load::Class 
-  $plugins->register ($plugin,\%options);   
-
-  #later during a phase: execute all plugins in this phase
-  @p=$plugins->execute ($phase, $core); 
-  foreach my $plugin (@p){
-    my ($obj, $ret)=$plugins->return_value($plugin);
-  }
-
-=attr   
-  $aref=$plugins->phases;  #getter
-
-Getter returns arrayRef with all phase labels. 
-
-Note that order of phases has no impact on when they're called. It's up the app 
-which makes use of Plugin::Simple to call phases.
-
-=method my @a=$self->filter_phases (sub {/^b/});
-
-return only those phases which match the criterion.
-
-=cut
 
 has 'phases' => (
-    traits  => ['Array'],
     is      => 'ro',
     isa     => 'ArrayRef[Str]',
     default => sub { [] },
-    handles => {'filter_phases' => 'grep'},
+    trigger => \&_uniq_phases,
 );
 
+sub _uniq_phases {
+    my ($self, $phases_aref) = @_;
+    my %seen = ();
+    my @unique = grep { !$seen{$_}++ } @{$phases_aref};
+    $self->{phases} = \@unique;
+}
 
-=attr plugins
+#
+# METHODS
+#
 
-the accessor 'plugins' returns a hashRef with all registered
-plugins in their respective phases:
-  my $registry=$plugins->plugins;
-  
-  #returns first plugin from that phase
-  $registry->{$phase}[0]; 
 
-You can't use 'plugins' in the constructor. User register instead to get 
-plugins in this list after construction.
-
-=cut
-
-has 'plugins' => (
+has 'registry' => (
     is       => 'ro',
     isa      => 'HashRef[ArrayRef[Str]',
     init_arg => undef,
 );
 
-=method my @registered_plugins=$self->plugin_list
 
-List all registered plugins. Returns a list.
+sub filter_phases {
+    my $self = shift;
+    my $filter = shift or return;
+    return grep ($_ eq $filter, @{$self->{phases}});
+}
 
-=cut
+
+sub add_phase {
+    my $self = shift;
+    return if (!@_);
+    foreach my $new_phase (@_) {
+
+        #don't allow to same phase twice with add_phase
+        if (!grep ($_ eq $new_phase, @{$self->{phases}})) {
+            push @{$self->{phases}}, $new_phase;
+        }
+    }
+    return @_;
+}
+
+
 
 sub list_plugins {
-    my $self     = shift;
-    my $registry = $self->plugins;
+    my $self = shift;
     my @p;
-    foreach my $phase (keys %{$registry}) {
-        foreach my $plugin (@{$registry->{$phase}}) {
+    foreach my $phase (keys %{$self->registry}) {
+        foreach my $plugin (@{$self->registry->{$phase}}) {
             push(@p, $plugin);
         }
     }
     return @p;
 }
 
-=method my @plugins=filter_plugins(sub {/Test/}); 
-
-return registered plutings whose names fits the filter criterion
-=cut
 
 sub filter_plugins {
-    my ($self, $filter) = @_;
-    return if (!$filter);
-    return grep ($filter, $self->list_plugins);
+    my $self = shift;
+    my $filter = shift or return;
+    return grep ($_ eq $filter, $self->list_plugins);
 }
 
 
-=method my ($obj,$ret)=return_value($plugin)
-
-Expects the plugin (label), returns the plugin object and return value from 
-execute as list.
-
-=cut
 
 sub return_value {
     my $self = shift;
     my $plugin = shift || return;
 
     #not sure confess is the right thing to do here
-    if (!$self->filter_plugins(sub {/^$plugin$/})) {
+    if (!$self->filter_plugins($plugin)) {
         confess "plugin '$plugin' not registered";
     }
 
     if (!defined $self->{return_values}{$plugin}) {
-        confess "Return value for plugin '$plugin' doesn't exist!";
+        return undef;
     }
 
-    my $aref = $self->{return_values}{$plugin};
-    return $aref->[0], $aref->[1];
+    return $self->{return_values}{$plugin};
 }
 
-=method $plugins->register ($plugin, $options)
-
-Dies (confesses) on failure. 
-
-Should we implement an option for lazy load? Then load would be delayed until 
-when we need execute. Not now, but maybe later. 
-
-Should return name of plugin on success.
-
-=cut
 
 sub register {
     my ($self, $plugin, $options) = @_;
@@ -153,97 +112,227 @@ sub register {
           "Your plugin '$plugin' doesn't plug in right (Plugin::Simple::Role::Plugin).";
     }
 
+    #phase could be malformed
     my $phase = $plugin->phase();
+    confess 'Problem with phase' if (!$phase);
     $self->_phase_exists($phase);
 
+    #prevent same plugin to register twice
     #print "plugin $plugin comes with phase $phase\n";
-
-    push @{$self->{plugins}{$phase}}, $plugin;
+    if (!grep ($_ eq $plugin, @{$self->{registry}{$phase}})) {
+        push @{$self->{registry}{$phase}}, $plugin;
+    }
     return $plugin;    #success
 }
 
-=method my @p=$self->execute($phase,$core);
-
-returns list of plugins which were run. Accepts whatever you pass it. It 
-doesn't have to be your core.
-
-=cut
 
 sub execute {
     my $self  = shift;
-    my $phase = shift;
+    my %arg   = @_ or confess "Need some args";
+    my $phase = delete $arg{phase} or confess "Need phase";
 
     $self->_phase_exists($phase);
-    my $aref = $self->{plugins}{$phase};
+    my $registered_plugins = $self->{registry}{$phase};
 
-    if (@{$aref} == 0) {
+    if (@{$registered_plugins} == 0) {
         confess "No plugins registered for phase '$phase'";
     }
 
-    foreach my $plugin (@{$aref}) {
-        my $obj = $plugin->new(@_);
-        $self->{return_values}{$plugin} = [$obj, $obj->execute()];
+    #do I really need an execute in every plugin? It would be much
+    #easier without it... execute gives me a proper return value
+    #new also returns something, of course. The alternative would be to
+    #hand over the result inside the object. I guess that would be
+    #a requirement I could make: a la $self->return
+    foreach my $plugin (@{$registered_plugins}) {
+        my $p = $plugin->new(%arg);
+        if ($p->return) {
+            $self->{return_values}{$plugin} = $p->return;
+        }
     }
-    return $aref;
+    return @{$registered_plugins};
 }
 
+#
+# PRIVATE
+#
+
+#make public? no need
 sub _phase_exists {
     my ($self, $phase) = @_;
-    if (!$self->filter_phases(sub {/^$phase$/})) {
+    if (!$self->filter_phases($phase)) {
         confess "Phase '$phase' unknown";
     }
 }
 
 1;
 
+
+__END__
+=pod
+
+=head1 NAME
+
+Plugin::Simple - Simply make your app pluggable
+
+=head1 VERSION
+
+version 0.001
+
+=head1 SYNOPSIS
+
+  package YourPlugin;
+  use Moose;                           
+  with 'Plugin::Simple::Role::Plugin'; 
+
+  has 'input' => (is=>'ro', isa=>'Int');
+
+  sub phase {'foo'}
+  
+  sub BUILD {
+      my ($self)=@_; #receive what you hand over in execute below
+      $self->input; #access stuff passed down from core;
+      #...
+      $self->return ($something); #available in core when plugin is done
+  }
+
+  package YourApp;
+  use Plugin::Simple;
+
+  #during configuration 
+  $ps=Plugin::Simple->new(phases=>['foo', 'bar']); 
+
+  #registers p under its phase & load/use it; $options from Load::Class 
+  $ps->register ('YourPlugin',\%options);   
+
+  #later during a phase: execute all plugins in this phase
+  @p=$ps->execute (phase=>$phase, core=>$core); 
+
+  foreach my $plugin (@p){
+    my $return=$plugins->return_value($plugin);
+  }
+
 =head1 DESCRIPTION
 
-=head2 Non-essential bla bla bla
+WaRNING THiS iS An EaRLY ReLEAsE! NoT QUiTE TeSTED IN ThE WIlD YEt.
 
-It's so easy to implement plugins in perl that you don't need a separate 
-module. However, perhaps you like it a little easier. 
+Plugin::Simple provides 
 
-I think that a plugin system is just a mechanism which allows you to load 
-plugins (code) from your configuration (i.e. without changing the code of your 
-core). Plugins make your code modular, extendable, or in a word: cool. 
+=over 1
 
-There are many easy ways to implement plugins in perl. I am trying to learn 
-from Dancer and Dist::Zilla, two projects with plugins that I came across in 
-the past. Let me know if you think there are other plugin systems which I 
-should look at. 
+=item a) a defininition for plugin systems 
 
-This is my first attempt at coming up with a plugin system.
+No big deal? Yeah, but it's there anyways. See C<Tutorial.pod>.
 
-=head2 Features of Plugin Systems
+=item 2) suggestions how to roll your own mini-plugin system
 
-=over
+You need only a single sub and three lines of perl. See C<Tutorial.pod>. No 
+moose required.
 
-=item useing / loading
+=item 3) two minimalistic plugin system
 
-A plugin system has to have way loading your code. For example, with 
-perl's use, require or Class::Load, as a base or role, or implementing a role.
+  Plugin::Tiny - only one plugin per phase
+  Plugin::Simple - multiple plugins per phase possible
+  
+  For Plugin::Simple, phase info specified by the plugin. Plugin::Tiny requires 
+  the calling instance (core or bundling plugin) to specify the phase. There 
+  are some small differences how return values and arguments are handled. If 
+  uncertain, try Tiny first. 
+  
+  Both use Moose and suggest that in your Plugins you do too, but Plugin::Tiny 
+  doesn't require you to use Moose.
 
-=item starting point
+=back
 
-A plugin system has to have somewhere to start. I assume this is always a sub
-which gets called from the core when the time has come. 
+=head1 ATTRIBUTES
 
-=item phases
+=head2 $aref=$ps->phases; 
 
-Many plugin systems have phases during which they call plugins, so that plugins
-don't all get run at one time and in arbitrary order, but at different times
-in your app and when you want them. Let's say sufficiently real-wordly plugin
-systems need this feature.
+Getter returns arrayRef with all phase labels. 
 
-=item access
+Note that order of phases has no impact on when they're called. It's up the app 
+which makes use of Plugin::Simple (the core) to call the phases when they are
+needed. 
 
-Plugin system allow the plugin a varying amount of access to the core program. 
-This being perl with little real closure for objects, I typically just hand all 
-of core to the plugin, but a good plugin system might have good reason to be 
-more restrictive.
+Plugin::Simple->new (phases=>[qw(a,b,b)]) removes duplicate phases now.
+
+=head1 METHODS
+
+=head2 my $href=$ps->registry;
+
+returns a hashRef with all registered plugins in their respective 
+phases:
+  my $registry=$ps->registry;
+
+  #returns first plugin from that phase
+  $registry->{$phase}[0]; 
+
+You can't use 'registry' in the constructor. Use register instead to get 
+plugins into the registry.
+
+=head2 my @plugins=$ps->filter_phases('Test');  
+
+return only those registered plugins whose names fit the filter criterion.
+Currently, only exact matches no regular expressions. Might change.
+
+=head2 my @a=$ps->add_phase ('phase1');
+
+Teach the plugin system a new phase. You can add multiple phases at once:
+  my @a=$self->add_phase ('phase1', 'phase2');
+
+=head2 my @registered_plugins=$ps->plugin_list
+
+List all registered plugins as a list. (It flattens registry to a list.)
+
+=head2 my @plugins=$ps->filter_plugins(/Test/); #no sub! 
+
+return only those registered plugins whose names fit the filter criterion.
+
+=head2 my $ret=$ps->return_value($plugin)
+
+Expects the plugin (label), returns the return value from that plugin. If there
+is no return value it returns undef.
+
+You better make sure that you executed the plugin, because this method doesn't
+do that for you.
+
+=head2 $ps->register ($plugin, $options)
+
+Dies (confesses) on failure. 
+
+Should we implement an option for lazy load? Then load would be delayed until 
+when we need execute. Not now, but maybe later. 
+
+Returns name of plugin on success.
+
+=head2 my @p = $ps->execute(phase => $phase);
+
+Makes new plugins for all plugins registered in this phase. Needs phase. 
+Optionally accepts arguments for new. Hash elements other than 'phase' are 
+passed to new verbatim. Returns list of plugins that were run. Use 
+C<return_value> to access return value from that plugin.
 
 =head1 SEE ALSO
 
+There are many easy ways to implement plugins in perl. I am trying to learn 
+from L<Dancer> and L<Dist::Zilla>, two projects with plugins that I came across
+in the past. Let me know if you think there are other plugin systems which I 
+should look at. 
+
 L<MST's blog|
 http://shadow.cat/blog/matt-s-trout/beautiful-perl-a-simple-plugin-system/>
+
+L<MooseX::Plaggerize>
+
+=head1 AUTHOR
+
+Maurice Mengel <mauricemengel@gmail.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2012 by Maurice Mengel.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
 
