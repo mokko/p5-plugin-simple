@@ -40,6 +40,36 @@ use Class::Load qw(load_class);
     my $return=$plugins->return_value($plugin);
   }
 
+=head1 DESCRIPTION
+
+Plugin::Simple provides 
+
+=over 1
+
+=item a) a defininition for plugin systems 
+
+No big deal? Yeah, but it's there anyways. See C<Tutorial.pod>.
+
+=item 2) suggestions how to roll your own mini-plugin system
+
+You need only a single sub and three lines of perl. See C<Tutorial.pod>. No 
+moose required.
+
+=item 3) two minimalistic plugin system
+
+  Plugin::Simple
+  Plugin::Tiny
+
+Both use Moose and suggest that you do too, but you don't have to.
+
+=back
+
+=cut
+
+#
+# ATTR
+#
+
 =attr  $aref=$ps->phases; 
 
 Getter returns arrayRef with all phase labels. 
@@ -264,59 +294,12 @@ sub _phase_exists {
 
 1;
 
-=head1 DESCRIPTION
-
-=head2 Non-essential bla bla bla
-
-It's so easy to implement plugins in perl that you don't need a separate 
-module. However, perhaps you like it a little easier. 
-
-I think that a plugin system is just a mechanism which allows you to load 
-plugins (code) from your configuration (i.e. without changing the code of your 
-core). Plugins make your code modular, extendable, and cool. 
+=head1 SEE ALSO
 
 There are many easy ways to implement plugins in perl. I am trying to learn 
-from Dancer and Dist::Zilla, two projects with plugins that I came across in 
-the past. Let me know if you think there are other plugin systems which I 
+from L<Dancer> and L<Dist::Zilla>, two projects with plugins that I came across
+in the past. Let me know if you think there are other plugin systems which I 
 should look at. 
-
-I call the main app which calls the plugins 'core'.
-
-=head2 Features of Plugin Systems
-
-=over
-
-=item useing / loading
-
-A plugin system has to have way to load plugins. For example, with perl's use,
-require or modules like Class::Load. It can just use them, load them a base or
-as a role, trait etc.
-
-=item starting point
-
-A plugin system has to have somewhere to start. I assume this is always a sub
-which gets called from the core when the time has come. 
-
-=item phases
-
-Many plugin systems have phases during which they call plugins, so that plugins
-don't all get run at one time and in arbitrary order, but at different times
-in your app and when you want them. Let's say a sufficiently real-wordly plugin
-systems need this feature.
-
-Phases also allow the plugin-system to be plugin-unaware during compile (use) 
-time. We know the phases during use time, but yet which plugins will be loaded
-from config, so we execute every plugin registered for that particular phase
-when the time for this phase has come.
-
-=item access
-
-Plugin systems allow the plugin a varying amount of access to the core program. 
-This being perl with little real closure for objects, I typically just hand all 
-of core to the plugin, but a good plugin system might have good reason to be 
-more restrictive. Plugin::Simple allows you to choose what you hand down.
-
-=head1 SEE ALSO
 
 L<MST's blog|
 http://shadow.cat/blog/matt-s-trout/beautiful-perl-a-simple-plugin-system/>
