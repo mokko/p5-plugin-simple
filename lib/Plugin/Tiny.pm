@@ -3,7 +3,7 @@ package Plugin::Tiny;
 use strict;
 use warnings;
 use Carp 'confess';
-use Class::Load;
+use Class::Load 'load_class';
 use Moose;
 use namespace::autoclean;
 
@@ -11,7 +11,7 @@ has '_registry' => (    #href with phases and plugin objects
     is        => 'ro',
     isa       => 'HashRef[Object]',
     default   => sub { {} },
-    init_args => undef,
+    init_arg => undef,
 );
 
 =head1 SYNOPSIS
@@ -39,19 +39,19 @@ has '_registry' => (    #href with phases and plugin objects
 
 =head1 DESCRIPTION
 
-Plugin::Tiny has less code than Plugin::Simple while almost providing the
-same functionality.
+Plugin::Tiny has less code than Plugin::Simple with almost the same 
+functionality.
 
 A limitation of Plugin::Tiny is that each phase can have only one plugin. 
-But you can create bundles of plugins if you hand the plugin system down to the
-plugin. That way, you load multiple plugins for one phase, although you still
-need distinct phase labels for each plugin.
+But you can still create bundles of plugins if you hand the plugin system down 
+to the plugin. That way, you can load multiple plugins for one phase; you 
+still need distinct phase labels for each plugin.
 
   #in your core
   $self->plugins->register(
     phase=>'scan', 
     plugin=>$scan_plugin, 
-    $args=>{plugins=>$self->plugins}
+    plugins=>$self->plugins, #plugin system
   );
 
   #in your $scan_plugin (acts as a bundle)
@@ -68,25 +68,35 @@ Perhaps you always want to require an execute method instead of do_something.
 =method $plugin_system->register(phase=>$phase, plugin=>$plugin_class);  
 
 Optionally, you can also specify a role which your plugin will have to be able 
-to apply and args for the constructor, see Synopsis.
+to apply. Remaining key value pairs are passed down to the plugin constructor: 
 
-Returns the newly created plugin object on success.
+  $plugin_system->register (
+    phase=>$phase, 
+    plugin=>$plugin,
+    role=>$role,
+    plugins=>$plugin_system,
+    args=>$more_args,
+  );
+
+A side-effect of this is that your plugin cannot use 'phase', 'plugin', 'role' 
+as named arguments.
+
+Returns the newly created plugin object on success. Confesses on error.
 
 =cut
 
 sub register {
     my $self   = shift;
-    my %args   = shift;
-    my $plugin = $args{plugin} or confess "Need plugin";
-    my $phase  = $args{phase} or confess "Need phase";
-    my @args   = $args{args} ? @{$args{args}} : ();
+    my %args   = @_;
+    my $plugin = delete $args{plugin} or confess "Need plugin";
+    my $phase  = delete $args{phase} or confess "Need phase";
+    my $role= delete $args{role} if $args{role};
 
-    load_class($args{plugin});
+    load_class($plugin) or confess "Can't load $plugin";
+    $self->{_registry}{$phase} = $plugin->new(%args);
 
-    $self->{_registry}{$phase} = $plugin->new(@args);
-
-    if (defined $args{role} && !$plugin->does($args{role})) {
-        confess qq(Plugin doesn't plugin into role '$args{role}');
+    if ($role && !$plugin->does($role)) {
+        confess qq(Plugin doesn't plugin into role '$role');
     }
     return $self->{_registry}{$phase};
 }

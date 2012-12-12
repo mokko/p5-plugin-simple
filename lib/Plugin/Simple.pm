@@ -42,6 +42,8 @@ use Class::Load qw(load_class);
 
 =head1 DESCRIPTION
 
+WaRNING THiS iS An EaRLY ReLEAsE! NoT QUiTE TeSTED IN ThE WIlD YEt.
+
 Plugin::Simple provides 
 
 =over 1
@@ -57,10 +59,16 @@ moose required.
 
 =item 3) two minimalistic plugin system
 
-  Plugin::Simple
-  Plugin::Tiny
-
-Both use Moose and suggest that you do too, but you don't have to.
+  Plugin::Tiny - only one plugin per phase
+  Plugin::Simple - multiple plugins per phase possible
+  
+  For Plugin::Simple, phase info specified by the plugin. Plugin::Tiny requires 
+  the calling instance (core or bundling plugin) to specify the phase. There 
+  are some small differences how return values and arguments are handled. If 
+  uncertain, try Tiny first. 
+  
+  Both use Moose and suggest that in your Plugins you do too, but Plugin::Tiny 
+  doesn't require you to use Moose.
 
 =back
 
@@ -90,10 +98,10 @@ has 'phases' => (
 );
 
 sub _uniq_phases {
-    my ($self, $phases_aref)=@_;
+    my ($self, $phases_aref) = @_;
     my %seen = ();
-    my @unique = grep { ! $seen{ $_ }++ } @{$phases_aref};
-    $self->{phases}=\@unique;
+    my @unique = grep { !$seen{$_}++ } @{$phases_aref};
+    $self->{phases} = \@unique;
 }
 
 #
@@ -304,3 +312,5 @@ should look at.
 L<MST's blog|
 http://shadow.cat/blog/matt-s-trout/beautiful-perl-a-simple-plugin-system/>
 
+L<MooseX::Plaggerize>
+=cut

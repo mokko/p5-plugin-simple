@@ -42,6 +42,8 @@ This being perl with little real closure for objects, I typically just hand all
 of core to the plugin, but a good plugin system might have good reason to be 
 more restrictive. Plugin::Simple allows you to choose what you hand down.
 
+=back
+
 =head1 ROLL YOUR OWN!
 
 It's so easy to implement plugins in perl that you don't need a separate 
@@ -89,6 +91,7 @@ Plugins loading other plugins are a cheap way of implementing bundles.
 =head2 Restrictions with the above mini implementation
 
 =over 1
+
 =item
 
 Core has to know the methods your plugin implements (e.g. ->doSomething). Not
